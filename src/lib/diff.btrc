@@ -1,3 +1,7 @@
+import std.*;
+import ../core/*;
+import ../system/config.btrc;
+
 class DiffOptions {
     public bool recent;
     public bool showSymlinks;
@@ -214,7 +218,7 @@ class DiffScanner {
     public void print(DiffOptions options) {
         Vector<string> keepList = self.keepPaths();
         Vector<string> mounts = self.mountPoints();
-        string ignorePath = options.diffignore.isEmpty() ? PathTools.join(self.config.paths.root, "lib/btrfs/.diffignore") : options.diffignore;
+        string ignorePath = options.diffignore.isEmpty() ? PathTools.join(self.config.paths.root, "btrc/btrfs/.diffignore") : options.diffignore;
         Vector<string> ignores = self.ignorePatterns(ignorePath);
         Vector<string> ephemeral = [];
         Vector<string> persistedPaths = [];

@@ -1,9 +1,9 @@
 import Library.FileSystem;
 import Library.Bytes;
 import Library.Strings;
-import ../../core/log.btrc;
-import ./constants.btrc;
-import ./types.btrc;
+import ../../core/NixosLog.btrc;
+import ./ImmutabilityConstants.btrc;
+import ./Types.btrc;
 
 class ImmutabilityPaths {
     class string trimSlashes(string raw) {

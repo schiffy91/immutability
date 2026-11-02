@@ -1,10 +1,10 @@
 import Library.FileSystem;
 import Library.Platform;
 import Library.Vector;
-import ./fs.btrc;
-import ./paths.btrc;
-import ./run.btrc;
-import ./types.btrc;
+import ./ImmutabilityFs.btrc;
+import ./ImmutabilityPaths.btrc;
+import ./ImmutabilityRun.btrc;
+import ./Types.btrc;
 
 class ImmutabilityMaterializer {
     public ImmutabilityRun run;

@@ -2,9 +2,9 @@ import Library.FileSystem;
 import Library.Process;
 import Library.Strings;
 import Library.Vector;
-import ./btrfs.btrc;
-import ./paths.btrc;
-import ./run.btrc;
+import ./ImmutabilityBtrfs.btrc;
+import ./ImmutabilityPaths.btrc;
+import ./ImmutabilityRun.btrc;
 
 class ImmutabilityFs {
     public ImmutabilityRun run;

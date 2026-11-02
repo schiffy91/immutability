@@ -1,12 +1,12 @@
 import Library.FileSystem;
 import Library.Process;
 import Library.Vector;
-import ./btrfs.btrc;
-import ./constants.btrc;
-import ./fs.btrc;
-import ./paths.btrc;
-import ./run.btrc;
-import ./types.btrc;
+import ./ImmutabilityBtrfs.btrc;
+import ./ImmutabilityConstants.btrc;
+import ./ImmutabilityFs.btrc;
+import ./ImmutabilityPaths.btrc;
+import ./ImmutabilityRun.btrc;
+import ./Types.btrc;
 
 class ImmutabilityMounts {
     public ImmutabilityRun run;

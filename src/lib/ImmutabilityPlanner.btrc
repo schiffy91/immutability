@@ -1,9 +1,9 @@
 import Library.FileSystem;
 import Library.Strings;
 import Library.Vector;
-import ./fs.btrc;
-import ./paths.btrc;
-import ./types.btrc;
+import ./ImmutabilityFs.btrc;
+import ./ImmutabilityPaths.btrc;
+import ./Types.btrc;
 
 class ImmutabilityPlanner {
     public ImmutabilityFs fs;

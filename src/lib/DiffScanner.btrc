@@ -5,9 +5,9 @@ import Library.Pattern;
 import Library.Process;
 import Library.Strings;
 import Library.Vector;
-import ../../core/log.btrc;
-import ./snapshot.btrc;
-import ../config.btrc;
+import ../../core/NixosLog.btrc;
+import ./SnapshotManager.btrc;
+import ../NixosConfig.btrc;
 
 class DiffOptions {
     public bool recent;

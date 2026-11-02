@@ -2,11 +2,11 @@ import Library.Datetime;
 import Library.FileSystem;
 import Library.Strings;
 import Library.Vector;
-import ./constants.btrc;
-import ./fs.btrc;
-import ./paths.btrc;
-import ./run.btrc;
-import ./types.btrc;
+import ./ImmutabilityConstants.btrc;
+import ./ImmutabilityFs.btrc;
+import ./ImmutabilityPaths.btrc;
+import ./ImmutabilityRun.btrc;
+import ./Types.btrc;
 
 class ImmutabilityOrphans {
     public ImmutabilityFs fs;

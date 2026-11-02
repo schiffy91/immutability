@@ -3,9 +3,9 @@ import Library.Datetime;
 import Library.FileSystem;
 import Library.Platform;
 import Library.Process;
-import ../../core/log.btrc;
-import ./constants.btrc;
-import ./paths.btrc;
+import ../../core/NixosLog.btrc;
+import ./ImmutabilityConstants.btrc;
+import ./ImmutabilityPaths.btrc;
 
 class ImmutabilityRun {
     public UnixShell shell;

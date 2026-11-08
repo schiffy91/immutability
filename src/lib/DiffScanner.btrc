@@ -5,7 +5,7 @@ import Library.Pattern;
 import Library.Process;
 import Library.Strings;
 import Library.Vector;
-import ../../core/NixosLog.btrc;
+import ../core/NixosLog.btrc;
 import ./SnapshotManager.btrc;
 import ../NixosConfig.btrc;
 
@@ -259,7 +259,7 @@ class DiffScanner {
     public void print(DiffOptions options) {
         var keepList = self.keepPaths();
         var mounts = self.mountPoints();
-        var ignorePath = options.diffignore.isEmpty() ? PathTools.join(self.config.paths.root, "btrc/nixosctl/btrfs/.diffignore") : options.diffignore;
+        var ignorePath = options.diffignore.isEmpty() ? PathTools.join(self.config.paths.root, "config/pkgs/utils/nixosctl/lib/btrfs/.diffignore") : options.diffignore;
         var ignores = self.ignorePatterns(ignorePath);
         Vector<string> ephemeral = [];
         Vector<string> persistedPaths = [];

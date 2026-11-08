@@ -3,8 +3,8 @@ import Library.Platform;
 import Library.Process;
 import Library.Strings;
 import Library.Vector;
-import ../../core/NixosLog.btrc;
-import ../../core/NixosPaths.btrc;
+import ../core/NixosLog.btrc;
+import ../core/NixosPaths.btrc;
 import ../NixosConfig.btrc;
 
 class ResetSubvolume {

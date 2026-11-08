@@ -4,7 +4,7 @@ import Library.FileSystem;
 import Library.Platform;
 import Library.Vector;
 import Library.Process;
-import ../../core/NixosLog.btrc;
+import ../../../../../pkgs/utils/nixosctl/lib/core/NixosLog.btrc;
 import ./ImmutabilityConstants.btrc;
 import ./ImmutabilityPaths.btrc;
 

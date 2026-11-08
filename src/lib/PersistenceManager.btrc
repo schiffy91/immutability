@@ -1,4 +1,4 @@
-import ../../core/NixosLog.btrc;
+import ../core/NixosLog.btrc;
 import ../NixosConfig.btrc;
 import ./BtrfsImmutabilityManager.btrc;
 import ./SnapshotManager.btrc;

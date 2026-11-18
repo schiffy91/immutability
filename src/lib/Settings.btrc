@@ -1,0 +1,55 @@
+import Library.FileSystem;
+import Library.JSON;
+import Library.Vector;
+import ./Log.btrc;
+
+// What the module wrote for the commands a person runs (diff, materialize, plan, prepare, snapshots):
+// where the volumes are and how they reset. The boot-time run is given the same as arguments.
+class Settings {
+    public string device;
+    public string snapshotsSubvolume;
+    public string snapshotsMountPoint;
+    public string cleanName;
+    public string base;
+    public string persistRoot;
+    public string specFile;
+    public string diffIgnore;
+    public int keepGenerations;
+    public int restoreGeneration;
+    public Vector<string> volumes;  /* "name=mount point", the ones that reset */
+    public Vector<string> persistPaths;
+
+    class string defaultPath() { return "/etc/immutability/settings.json"; }
+
+    private Vector<string> strings(JSONValue root, string key) {
+        Vector<string> result = [];
+        if (!root.has(key)) { return result; }
+        for element in root.get(key).elements() { result.push(element.asString()); }
+        return result;
+    }
+
+    private string text(JSONValue root, string key, string fallback) {
+        return root.has(key) && root.get(key).isString() ? root.get(key).asString() : fallback;
+    }
+
+    public Settings(string path = "") {  /* no path: the defaults, for a caller that names everything itself */
+        var root = JSONValue.parse("{}");
+        if (!path.isEmpty()) {
+            if (!FileSystem.isFile(path)) { Log.fatal(f"No settings at {path}: this machine's configuration does not enable immutability or persistence"); }
+            root = JSONValue.readFile(path);
+        }
+        if (!root.isObject()) { Log.fatal(f"{path} is not a JSON object"); }
+        self.device = self.text(root, "device", "");
+        self.snapshotsSubvolume = self.text(root, "snapshotsSubvolume", "@snapshots");
+        self.snapshotsMountPoint = self.text(root, "snapshotsMountPoint", "/.snapshots");
+        self.cleanName = self.text(root, "cleanName", "CLEAN");
+        self.base = self.text(root, "base", "clean");
+        self.persistRoot = self.text(root, "persistRoot", "@persist");
+        self.specFile = self.text(root, "specFile", "/etc/immutability/spec.toml");
+        self.diffIgnore = self.text(root, "diffIgnore", "");
+        self.keepGenerations = root.has("keepGenerations") ? root.get("keepGenerations").asInt() : 3;
+        self.restoreGeneration = root.has("restoreGeneration") ? root.get("restoreGeneration").asInt() : 1;
+        self.volumes = self.strings(root, "volumes");
+        self.persistPaths = self.strings(root, "persistPaths");
+    }
+}

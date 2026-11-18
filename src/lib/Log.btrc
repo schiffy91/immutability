@@ -1,0 +1,15 @@
+import Library.Console;
+
+class Log {
+    class void info(string message) {
+        Console.error(f"\033[90mLOG: {message}\033[0m");
+    }
+
+    class void error(string message) {
+        Console.error(f"\033[38;5;208mERROR: {message}\033[0m");
+    }
+
+    class void fatal(string message) {  /* caught at the command's top, where it becomes exit 1 */
+        throw message;
+    }
+}

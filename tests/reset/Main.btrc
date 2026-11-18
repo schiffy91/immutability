@@ -1,0 +1,128 @@
+import Library.CLI;
+import Library.JSON;
+import Library.Process;
+import testkit.Lab;
+
+// A machine whose root and home are btrfs subvolumes that reset at every boot, on either base: what is
+// persisted outlives a reset with its owners, what is not is gone, earlier roots are kept and one can be
+// put back, a store nothing names any more is set aside, and the commands a person runs work from the
+// settings the module wrote.
+class ResetScenario {
+    private Guest machine;
+    private bool clean;
+    private string tool;
+
+    public ResetScenario(Guest machine, string base) {
+        self.machine = machine;
+        self.clean = base == "clean";
+        self.tool = f"immutability --base {base} --keep-generations 3 -- /dev/vdb @snapshots CLEAN";
+    }
+
+    private void booted() {
+        self.machine.waitForUnit("multi-user.target", 180);
+        self.machine.succeed("mkdir -p /run/top && (mountpoint -q /run/top || mount -t btrfs -o subvolid=5 /dev/vdb /run/top)");
+    }
+
+    private void again() {  // the machine goes down and comes up from the same disk
+        self.machine.reboot();
+        self.machine.waitForShutdown();
+        self.machine.start();
+        self.booted();
+    }
+
+    private string read(string path) { return self.machine.succeed(f"cat {ShellWords.quote(path)}").trim(); }
+
+    private void firstBoot() {
+        print("The first boot resets too: the root is the base, with the persisted paths in place");
+        self.booted();
+        Check.equal(self.read("/.snapshots/.immutability/version"), "2026.11.17", "the run recorded its version");
+        self.machine.succeed("findmnt -rn -o SOURCE --target / | grep -F '[/@root]'");
+        var parent = self.machine.succeed("btrfs subvolume show / | sed -n 's/^\\s*Parent UUID:\\s*//p'").trim();
+        if (self.clean) {
+            Check.equal(self.read("/etc/installed"), "from the installer", "what CLEAN holds is there");
+            Check.equal(parent, self.machine.succeed("btrfs subvolume show /.snapshots/@root/CLEAN | sed -n 's/^\\s*UUID:\\s*//p'").trim(), "the root is a copy of CLEAN");
+        } else {
+            self.machine.succeed("test ! -e /.snapshots/@root/CLEAN && test ! -e /.snapshots/@home/CLEAN");
+            Check.equal(parent, "-", "the root is a new subvolume, a copy of nothing");
+        }
+        self.machine.succeed("findmnt -rn -o SOURCE --target /var/keep | grep -F '@persist/dirs/var!keep'");
+        Check.equal(self.machine.succeed("stat -c %U:%a /home/alice").trim(), "alice:700", "the home folder is its user's");
+        self.machine.succeed("echo ephemeral > /root-file && echo kept > /var/keep/data && echo kept-file > /etc/keep-file && echo ALPHA > /home/generation-marker");
+        self.machine.succeed("su alice -c 'echo ephemeral > ~/scratch && mkdir -m 750 ~/kept && echo mine > ~/kept/note'");
+        self.machine.succeed("btrfs subvolume create '/run/top/@persist/dirs/stray!store' && echo left > '/run/top/@persist/dirs/stray!store/file' && sync");
+    }
+
+    private void afterReset() {
+        print("After a reset what was persisted is there with its owners, and the rest is gone");
+        self.again();
+        self.machine.succeed("test ! -e /root-file && test ! -e /home/alice/scratch && test ! -e /home/generation-marker");
+        Check.equal(self.read("/var/keep/data"), "kept", "a persisted directory");
+        Check.equal(self.read("/etc/keep-file"), "kept-file", "a persisted file");
+        Check.equal(self.read("/home/alice/kept/note"), "mine", "a directory the user made, persisted from then on");
+        self.machine.succeed("findmnt -rn -o SOURCE --target /home/alice/kept | grep -F '@persist/dirs/home!alice!kept'");
+        Check.equal(self.machine.succeed("stat -c %U:%a /home/alice/kept").trim(), "alice:750", "with its owner and mode");
+        Check.equal(self.machine.succeed("stat -c %U:%a /home/alice").trim(), "alice:700", "and the folder above it is still its user's");
+        self.machine.succeed("su alice -c 'echo again > ~/kept/second'");
+        if (self.clean) { Check.equal(self.read("/etc/installed"), "from the installer", "CLEAN's content is back"); }
+
+        print("The root before it is kept as a generation, and a store nothing names is set aside");
+        Check.equal(self.read("/.snapshots/@root/generation-1/root-file"), "ephemeral", "generation 1 of the root");
+        Check.equal(self.read("/.snapshots/@home/generation-1/generation-marker"), "ALPHA", "generation 1 of the home volume");
+        self.machine.succeed("test ! -e '/run/top/@persist/dirs/stray!store' && test \"$(cat /run/top/@persist/.orphans/stray\\!store-*/file)\" = left");
+    }
+
+    private void restore() {
+        print("An earlier generation of a volume can be put back");
+        self.machine.succeed("umount /home/alice/kept && umount /home");
+        self.machine.succeed(f"{self.tool} restore-a @persist /etc/immutability/spec.toml @home=/home", 120);
+        self.machine.succeed("mount /home");
+        Check.equal(self.read("/home/generation-marker"), "ALPHA", "the home volume as it was one boot ago");
+    }
+
+    private void commands() {
+        print("diff lists what changed and leaves out what is persisted");
+        self.machine.succeed("systemctl start immutability-marker.service 2>/dev/null || true");
+        self.machine.succeed("mkdir /diff-canary && dd if=/dev/zero of=/diff-canary/file bs=4096 count=16 status=none && echo more > /var/keep/data && sync");
+        var changed = self.machine.succeed("immutability diff 2>&1", 120);
+        Check.that(changed.contains("/diff-canary"), "a new directory on the root is listed");
+        Check.that(!changed.contains("/var/keep"), "a persisted path is not");
+
+        print("plan says what a reset would keep; materialize copies what is persisted back into the volume");
+        var plan = self.machine.succeed("immutability plan 2>&1", 120);
+        Check.that(plan.contains("keep dir /var/keep") && plan.contains("keep file /etc/keep-file"), "the plan names the persisted paths");
+        Check.that(plan.contains(self.clean ? "clean " : "base empty"), "and the base");
+        if (self.clean) {
+            self.machine.succeed("echo second-base > /etc/second && sync && immutability materialize --refresh-clean", 180);
+            Check.equal(self.read("/.snapshots/@root/CLEAN/etc/second"), "second-base", "CLEAN is the root as it is now");
+            Check.equal(self.read("/.snapshots/@root/CLEAN/var/keep/data"), "more", "with what was persisted copied into it");
+            self.again();
+            Check.equal(self.read("/etc/second"), "second-base", "and the next reset starts from it");
+        } else {
+            Check.that(self.machine.fail("immutability materialize --refresh-clean 2>&1").contains("no CLEAN snapshot to refresh"), "with nothing to refresh, refreshing is refused");
+            self.machine.succeed("immutability materialize", 180);
+            self.machine.succeed("immutability snapshots create && test ! -e /.snapshots/@root/CLEAN");
+        }
+    }
+
+    public void check() {
+        self.firstBoot();
+        self.afterReset();
+        self.restore();
+        self.commands();
+    }
+}
+
+int main(int argc, char** argv) {
+    try {
+        var lab = Lab(CLIArgs(argc, argv).require(0, "Supply VM descriptor"));
+        var base = lab.settings().get("base").asString();
+        lab.startAll();
+        ResetScenario(lab.guest("machine"), base).check();
+        lab.close();
+        print(f"PASS: volumes reset from a base that is {base}, and what is persisted outlives it");
+        return 0;
+    } catch (string error) {
+        print(f"FAIL: {error}");
+        return 1;
+    }
+}

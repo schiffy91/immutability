@@ -1,0 +1,7 @@
+*mesa_cache.db
+*mesa_cache.idx
+*qtshadercache*
+*QGfxShaderBuilder*
+*.sqlite*
+*tmp*
+*.cache*

@@ -67,8 +67,10 @@ The boot-time run is given everything as arguments by the module. The commands a
 `nix flake check` builds them. `unit-tool` runs the path and ownership suites. `vm-reset-clean` and
 `vm-reset-empty` boot a machine whose root and home are btrfs subvolumes made on its first boot, and reset
 it for real: persisted paths and their owners outlive a reset and the rest is gone, the root before it is a
-generation, a store nothing names is set aside, a generation is put back, and `diff`, `plan`,
-`materialize` and `snapshots` work from the settings. The VM checks need KVM.
+generation, a store nothing names is set aside, a generation is put back, a folder holding a file that
+cannot be cloned (no-copy-on-write, as a database or a search index is) is persisted both at once and at
+the next boot, and `diff`, `plan`, `materialize` and `snapshots` work from the settings. The VM checks
+need KVM.
 
 `ci/local.json` names what the owner's machine runs for a commit (`lint`, `unit`, `vm`), recorded with
 [`ci-local`](https://github.com/schiffy91/ci-local); hosted CI runs what has no local pass.

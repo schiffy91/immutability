@@ -103,9 +103,11 @@ class ImmutabilityFs {
         return "";
     }
 
+    // A clone where btrfs allows one. It refuses to clone a file marked no-copy-on-write (a database, a search
+    // index) into a new subvolume, and that file is copied instead.
     public void copyPath(string source, string destination) {
         self.run.mkdirp(PathTools.dirname(destination));
-        self.run.require(f"cp --reflink=always -a {ShellWords.quote(source)} {ShellWords.quote(destination)}");
+        self.run.require(f"cp --reflink=auto -a {ShellWords.quote(source)} {ShellWords.quote(destination)}");
     }
 
     public void copyDirectoryContents(string source, string destination) {
@@ -117,7 +119,25 @@ class ImmutabilityFs {
         }
         var sourceContents = ShellWords.quote(PathTools.join(source, "."));
         var quotedDestination = ShellWords.quote(destination);
-        self.run.require(f"cp --reflink=always -a {sourceContents} {quotedDestination}");
+        self.run.require(f"cp --reflink=auto -a {sourceContents} {quotedDestination}");
+    }
+
+    // A store that is being filled is not the store yet: a copy that fails half way must not leave a
+    // subvolume the next run takes for the persisted data and mounts over the real folder.
+    public void seedSubvolume(string store, string source) {
+        var filling = f"{store}.filling";
+        self.deleteSubvolume(filling);  /* what an earlier failure left */
+        self.makeSubvolume(filling);
+        try {
+            if (!source.isEmpty()) {
+                self.copyDirectoryContents(source, filling);
+                self.matchOwnerAndMode(source, filling);
+            }
+        } catch (string error) {
+            self.deleteSubvolume(filling);
+            throw error;
+        }
+        self.run.renamePath(filling, store);
     }
 
     public void matchOwnerAndMode(string source, string destination) {

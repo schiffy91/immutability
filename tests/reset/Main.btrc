@@ -49,6 +49,14 @@ class ResetScenario {
         Check.equal(self.machine.succeed("stat -c %U:%a /home/alice").trim(), "alice:700", "the home folder is its user's");
         self.machine.succeed("echo ephemeral > /root-file && echo kept > /var/keep/data && echo kept-file > /etc/keep-file && echo ALPHA > /home/generation-marker");
         self.machine.succeed("su alice -c 'echo ephemeral > ~/scratch && mkdir -m 750 ~/kept && echo mine > ~/kept/note'");
+        print("A folder holding a file that cannot be cloned is persisted all the same, at once and at the next boot");
+        // A database or a search index is marked no-copy-on-write, and btrfs refuses to clone such a file into a new subvolume.
+        var index = "mkdir {0} && touch {0}/data && chattr +C {0}/data && echo indexed > {0}/data && echo beside > {0}/plain && lsattr {0}/data | grep -q -- '-C-'";
+        self.machine.succeed(index.replace("{0}", "/var/index-live"));
+        self.machine.succeed("systemctl restart persistence-mounts.service", 120);  // what a switch to a configuration with a new path does
+        self.machine.succeed("findmnt -rn -o SOURCE --target /var/index-live | grep -F '@persist/dirs/var!index-live'");
+        Check.equal(self.read("/var/index-live/data") + " " + self.read("/var/index-live/plain"), "indexed beside", "its contents are in the store it is now mounted from");
+        self.machine.succeed(index.replace("{0}", "/var/index-boot"));
         self.machine.succeed("btrfs subvolume create '/run/top/@persist/dirs/stray!store' && echo left > '/run/top/@persist/dirs/stray!store/file' && sync");
     }
 
@@ -63,6 +71,8 @@ class ResetScenario {
         Check.equal(self.machine.succeed("stat -c %U:%a /home/alice/kept").trim(), "alice:750", "with its owner and mode");
         Check.equal(self.machine.succeed("stat -c %U:%a /home/alice").trim(), "alice:700", "and the folder above it is still its user's");
         self.machine.succeed("su alice -c 'echo again > ~/kept/second'");
+        Check.equal(self.read("/var/index-live/data") + " " + self.read("/var/index-boot/data") + " " + self.read("/var/index-boot/plain"), "indexed indexed beside", "both folders with a file that cannot be cloned");
+        self.machine.succeed("findmnt -rn -o SOURCE --target /var/index-boot | grep -F '@persist/dirs/var!index-boot' && test ! -e '/run/top/@persist/dirs/var!index-boot.filling'");
         if (self.clean) { Check.equal(self.read("/etc/installed"), "from the installer", "CLEAN's content is back"); }
 
         print("The root before it is kept as a generation, and a store nothing names is set aside");

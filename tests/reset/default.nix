@@ -57,10 +57,10 @@ in (import ../lib/vm-test.nix { inherit pkgs inputs; }) {
         { name = "@home"; mountPoint = "/home"; resetOnBoot = true; neededForBoot = true; }
         { name = "@snapshots"; mountPoint = "/.snapshots"; }
       ];
-      persist.paths = [ "/var/keep/" "/etc/keep-file" "/home/alice/kept" ];  # a directory by its slash, a file, and one the user makes
+      persist.paths = [ "/var/keep/" "/etc/keep-file" "/home/alice/kept" "/var/index-live" "/var/index-boot" ];  # by its slash, a file, one the user makes, two with a file that cannot be cloned
     };
     users.users.alice = { isNormalUser = true; uid = 1000; group = "users"; };
-    environment.systemPackages = [ pkgs.btrfs-progs ];
+    environment.systemPackages = [ pkgs.btrfs-progs pkgs.e2fsprogs ];  # chattr marks a file no-copy-on-write
     virtualisation.memorySize = 2048;
   };
   scenario = ./Main.btrc;

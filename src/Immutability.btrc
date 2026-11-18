@@ -152,12 +152,7 @@ class Immutability {
             if (!plan.kind.equals("dir")) { continue; }
             var store = self.run.path(plan.store);
             if (!self.fs.exists(store)) {
-                self.fs.makeSubvolume(store);
-                var source = self.fs.sourcePath(live, clean, plan.spec.relativePath);
-                if (!source.isEmpty()) {
-                    self.fs.copyDirectoryContents(source, store);
-                    self.fs.matchOwnerAndMode(source, store);
-                }
+                self.fs.seedSubvolume(store, self.fs.sourcePath(live, clean, plan.spec.relativePath));
             } else if (!self.fs.isSubvolume(store)) {
                 self.run.fatal(f"not a subvolume: {store}");
             }

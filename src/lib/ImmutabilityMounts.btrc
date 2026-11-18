@@ -67,11 +67,7 @@ class ImmutabilityMounts {
     public void ensurePersistentSubvolume(ImmutabilitySpec spec, string persistentSubvolume) {
         if (self.fs.isSubvolume(persistentSubvolume)) { return; }
         if (!self.persistAsDirectory(spec)) { return; }
-        self.fs.makeSubvolume(persistentSubvolume);
-        if (self.fs.exists(spec.absPath)) {
-            self.fs.copyDirectoryContents(spec.absPath, persistentSubvolume);
-            self.fs.matchOwnerAndMode(spec.absPath, persistentSubvolume);
-        }
+        self.fs.seedSubvolume(persistentSubvolume, self.fs.exists(spec.absPath) ? spec.absPath : "");
     }
 
     public Vector<ImmutabilitySpec> selectedSpecs(Vector<ImmutabilitySpec> specs) {

@@ -16,6 +16,7 @@ import ./lib/ImmutabilityPaths.btrc;
 import ./lib/ImmutabilityPlanner.btrc;
 import ./lib/ImmutabilityRun.btrc;
 import ./lib/ImmutabilitySlots.btrc;
+import ./lib/Leftovers.btrc;
 import ./lib/DiffScanner.btrc;
 import ./lib/Settings.btrc;
 import ./lib/SnapshotManager.btrc;
@@ -336,6 +337,31 @@ class Immutability {
         }
     }
 
+    // What nothing removes by itself is listed, and deleted only when that is asked for.
+    public void collect(bool deleting, int olderThan) {
+        self.mounts.mountTop(self.device, self.assumeMounted);
+        try {
+            Vector<string> names = [];
+            for volume in self.volumes { names.push(volume.name); }
+            var leftovers = Leftovers(self.fs, self.run);
+            var found = leftovers.find(self.persistRoot, self.snapshotsSubvolume, names, Leftovers.today(), olderThan);
+            for leftover in found {
+                Console.log(leftover.line().replace(self.run.top + "/", ""));
+                if (deleting) { leftovers.remove(leftover); }
+            }
+            if (found.isEmpty()) {
+                Console.log("nothing is left over");
+            } else if (deleting) {
+                self.run.require(ImmutabilityBtrfs.sync(self.run.top));
+                Console.log(f"deleted: {found.length}");
+            } else {
+                Console.log(f"left over: {found.length}. Nothing was deleted; `immutability gc --delete` deletes what is listed");
+            }
+        } finally {
+            self.mounts.unmountTop(self.assumeMounted);
+        }
+    }
+
     public void configureMount(string device, string persistRoot, string specFile) {
         self.device = device;
         self.persistRoot = ImmutabilityPaths.normSubvol(persistRoot);
@@ -390,6 +416,17 @@ class Immutability {
         return 0;
     }
 
+    class int gc(CLICommandLine parsed, bool dryRun, bool assumeMounted) {
+        var settings = Settings(parsed.option("--settings", Settings.defaultPath()));
+        var days = parsed.option("--older-than", "30");  /* a store set aside lately may be wanted back */
+        if (days.isEmpty() || !days.isDigit()) { Log.fatal("--older-than takes a number of days"); }
+        var immutability = Immutability(dryRun, assumeMounted);
+        immutability.base = settings.base;
+        immutability.configure(settings.device, settings.snapshotsSubvolume, settings.cleanName, ImmutabilityConstants.disabled(), settings.persistRoot, settings.specFile, settings.volumes);
+        immutability.collect(parsed.flag("--delete"), Strings.toInt(days));
+        return 0;
+    }
+
     class int diff(CLICommandLine parsed) {
         var options = DiffOptions();
         options.recent = parsed.flag("--recent");
@@ -439,6 +476,7 @@ class Immutability {
             var command = parsed.operand(0);
             if (command.equals("diff")) { return Immutability.diff(parsed); }
             if (command.equals("snapshots")) { return Immutability.snapshots(parsed, base); }
+            if (command.equals("gc")) { return Immutability.gc(parsed, dryRun, assumeMounted); }
             if (parsed.operandCount() == 1 && (command.equals("plan") || command.equals("prepare") || command.equals("materialize"))) {
                 return Immutability.fromSettings(parsed, command, dryRun, assumeMounted);
             }

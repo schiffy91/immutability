@@ -65,6 +65,7 @@ The boot-time run is given everything as arguments by the module. The commands a
 | `immutability plan` | What a reset would keep, and from which base |
 | `immutability prepare [--dry-run]` | Build `NEXT` now, without publishing it |
 | `immutability materialize [--dry-run] [--refresh-clean]` | Copy what is persisted back into the volumes; `--refresh-clean` then takes `CLEAN` anew, and is refused on an empty base |
+| `immutability gc [--older-than DAYS] [--delete]` | List what nothing removes by itself: the stores of paths no longer persisted that were set aside at least DAYS ago (30 unless given), slots of earlier layouts (`CURRENT`, `PREVIOUS`, `PENULTIMATE`) and folders a migration left (`migrate-*`). `--delete` deletes what is listed. `CLEAN`, the kept roots and anything it does not know are never among them |
 | `immutability snapshots create [--root <dir> --base B --snapshots-mount P --clean-name N name=mount ...]` | Take each reset volume's `CLEAN`. An installer names everything itself and gives the root it installed into |
 
 The layout on disk has a number, kept in `.immutability/format` under the snapshots subvolume (3 today).
@@ -81,7 +82,7 @@ know for as long as the layout is one they can read.
 `nix flake check` builds them. `unit-tool` runs the path and ownership suites. `vm-reset-clean` and
 `vm-reset-empty` boot a machine whose root and home are btrfs subvolumes made on its first boot, and reset
 it for real: a layout newer than the generation, an unknown one and an unreadable one are each left alone by a boot that goes on and says so, an older one is brought up, the filesystem is mounted once per boot, persisted paths and their owners outlive a reset and the rest is gone, the root before it is a
-generation, a store nothing names is set aside, a generation is put back, a folder holding a file that
+generation, a store nothing names is set aside, `gc` lists and then deletes an old one with an earlier layout's slot and a migration's folder while today's stays, a generation is put back, a folder holding a file that
 cannot be cloned (no-copy-on-write, as a database or a search index is) is persisted both at once and at
 the next boot, and `diff`, `plan`, `materialize` and `snapshots` work from the settings. The VM checks
 need KVM.

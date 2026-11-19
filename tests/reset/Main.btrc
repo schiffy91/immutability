@@ -93,6 +93,24 @@ class ResetScenario {
         Check.equal(self.read("/home/generation-marker"), "ALPHA", "the home volume as it was one boot ago");
     }
 
+    private void leftovers() {
+        print("gc lists what resets set aside and what earlier layouts left, and deletes only when told to");
+        var old = "/run/top/@persist/.orphans/old!store-2020-01-01T000000";
+        self.machine.succeed(f"btrfs subvolume create '{old}' && btrfs subvolume create /run/top/@snapshots/@root/PREVIOUS && mkdir -p /run/top/@snapshots/migrate-1-2/inner && btrfs subvolume create /run/top/@snapshots/migrate-1-2/inner/volume && sync");
+        var listed = self.machine.succeed("immutability gc 2>&1", 120);
+        Check.that(listed.contains("@persist/.orphans/old!store-2020-01-01T000000") && listed.contains("@snapshots/@root/PREVIOUS") && listed.contains("@snapshots/migrate-1-2"), "an old store, a slot of an earlier layout and a migration's folder are listed");
+        Check.that(!listed.contains("stray!store"), "a store set aside today is not: it may be wanted back");
+        Check.that(listed.contains("Nothing was deleted"), "and listing deletes nothing");
+        self.machine.succeed(f"test -d '{old}' && test -d /run/top/@snapshots/@root/PREVIOUS && test -d /run/top/@snapshots/migrate-1-2/inner/volume");
+        Check.that(self.machine.succeed("immutability gc --older-than 0 2>&1", 120).contains("stray!store"), "asked for every age, today's is listed too");
+        self.machine.succeed("immutability gc --delete", 120);
+        self.machine.succeed(f"test ! -e '{old}' && test ! -e /run/top/@snapshots/@root/PREVIOUS && test ! -e /run/top/@snapshots/migrate-1-2");
+        self.machine.succeed("ls -d /run/top/@persist/.orphans/stray\\!store-* && test -d /.snapshots/@root/generation-1");  // today's store and the kept roots are still there
+        if (self.clean) { self.machine.succeed("test -d /.snapshots/@root/CLEAN && test -d /.snapshots/@home/CLEAN"); }
+        Check.that(self.machine.succeed("immutability gc 2>&1", 120).contains("nothing is left over"), "and then there is nothing to list");
+        Check.equal(self.read("/var/keep/data"), "kept", "what is persisted is untouched");
+    }
+
     private void commands() {
         print("diff lists what changed and leaves out what is persisted");
         self.machine.succeed("systemctl start immutability-marker.service 2>/dev/null || true");
@@ -153,6 +171,7 @@ class ResetScenario {
         self.firstBoot();
         self.afterReset();
         self.restore();
+        self.leftovers();
         self.commands();
         self.newerLayout();
     }

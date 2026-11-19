@@ -1,0 +1,20 @@
+import Library.Testing;
+import ../../src/lib/Leftovers.btrc;
+
+int main() {
+    // Day numbers subtract across months, years and leap days.
+    Expect.isTrue(Leftovers.dayNumber(2026, 11, 18) - Leftovers.dayNumber(2026, 11, 17) == 1);
+    Expect.isTrue(Leftovers.dayNumber(2026, 3, 1) - Leftovers.dayNumber(2026, 2, 28) == 1);
+    Expect.isTrue(Leftovers.dayNumber(2028, 3, 1) - Leftovers.dayNumber(2028, 2, 28) == 2);
+    Expect.isTrue(Leftovers.dayNumber(2027, 1, 1) - Leftovers.dayNumber(2026, 12, 31) == 1);
+    Expect.isTrue(Leftovers.dayNumber(2026, 11, 18) - Leftovers.dayNumber(2025, 11, 18) == 365);
+    // A store set aside carries its day after the key, which may itself hold dashes and digits.
+    Expect.isTrue(Leftovers.age("var!keep-2026-11-08T101500", "2026-11-18") == 10);
+    Expect.isTrue(Leftovers.age("home!me!notes-2024-01-01-2026-11-18T000000", "2026-11-18") == 0);
+    Expect.isTrue(Leftovers.age("2026-10-19T235959", "2026-11-18") == 30);
+    Expect.isTrue(Leftovers.age("no-date-here", "2026-11-18") == -1);
+    Expect.isTrue(Leftovers.age("var!keep-2026-1x-08T101500", "2026-11-18") == -1);
+    Expect.isTrue(Leftovers.age("short", "2026-11-18") == -1);
+    print("PASS: day numbers, a set-aside store's age, names without a date");
+    return 0;
+}

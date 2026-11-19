@@ -1,0 +1,107 @@
+import Library.Console;
+import Library.DateTime;
+import Library.FileSystem;
+import Library.Strings;
+import Library.Vector;
+import ./ImmutabilityConstants.btrc;
+import ./ImmutabilityFs.btrc;
+import ./ImmutabilityRun.btrc;
+
+class Leftover {
+    public string kind;
+    public string path;
+    public int days;  /* since it was set aside; -1 when it carries no date */
+
+    public Leftover(string kind, string path, int days) {
+        self.kind = kind;
+        self.path = path;
+        self.days = days;
+    }
+
+    public string line() {
+        var age = self.days < 0 ? "" : f", {self.days} days old";
+        return f"{self.kind}{age}: {self.path}";
+    }
+}
+
+// What a reset sets aside and nothing removes: the store of a path that stopped being persisted, and
+// what layouts before this one left in the snapshots volume. `immutability gc` lists them, and deletes
+// them only when told to. A base to go back to (CLEAN) and the kept roots are never among them.
+class Leftovers {
+    public ImmutabilityFs fs;
+    public ImmutabilityRun run;
+
+    public Leftovers(ImmutabilityFs fs, ImmutabilityRun run) {
+        self.fs = fs;
+        self.run = run;
+    }
+
+    // Days from a fixed day to the given one, so that two of them subtract.
+    class int dayNumber(int year, int month, int day) {
+        var shifted = month <= 2 ? year - 1 : year;
+        var era = shifted / 400;
+        var yearOfEra = shifted - era * 400;
+        var dayOfYear = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1;
+        return era * 146097 + yearOfEra * 365 + yearOfEra / 4 - yearOfEra / 100 + dayOfYear;
+    }
+
+    // The day number in the last YYYY-MM-DD of a name that a T follows, as a set-aside store is stamped; -1 without one.
+    class int stampedDay(string name) {
+        for (int start = name.length - 11; start >= 0; start--) {
+            var candidate = name.substring(start, 11);
+            if (candidate.charAt(4) != '-' || candidate.charAt(7) != '-' || candidate.charAt(10) != 'T') { continue; }
+            var year = candidate.substring(0, 4);
+            var month = candidate.substring(5, 2);
+            var day = candidate.substring(8, 2);
+            if (!year.isDigit() || !month.isDigit() || !day.isDigit()) { continue; }
+            return Leftovers.dayNumber(Strings.toInt(year), Strings.toInt(month), Strings.toInt(day));
+        }
+        return -1;
+    }
+
+    class int age(string name, string today) {
+        var then = Leftovers.stampedDay(name);
+        var now = Leftovers.stampedDay(today + "T");
+        return then < 0 || now < 0 ? -1 : now - then;
+    }
+
+    private void setAside(Vector<Leftover> found, string directory, string kind, string today, int olderThan) {
+        if (!FileSystem.isDir(directory)) { return; }
+        for name in FileSystem.listDir(directory).sorted() {
+            var days = Leftovers.age(name, today);
+            if (days >= olderThan || (days < 0 && olderThan == 0)) { found.push(Leftover(kind, PathTools.join(directory, name), days)); }
+        }
+    }
+
+    public Vector<Leftover> find(string persistRoot, string snapshotsSubvolume, Vector<string> volumeNames, string today, int olderThan) {
+        Vector<Leftover> found = [];
+        var persist = self.run.path(persistRoot);
+        self.setAside(found, PathTools.join(persist, ImmutabilityConstants.orphans()), "the store of a folder no longer persisted", today, olderThan);
+        var files = PathTools.join(PathTools.join(persist, ImmutabilityConstants.meta()), ImmutabilityConstants.files());
+        self.setAside(found, PathTools.join(files, ImmutabilityConstants.orphans()), "files no longer persisted", today, olderThan);
+        var snapshots = self.run.path(snapshotsSubvolume);
+        for volume in volumeNames {
+            for slot in ["CURRENT", "PREVIOUS", "PENULTIMATE"] {
+                var path = PathTools.join(PathTools.join(snapshots, volume), slot);
+                if (self.fs.exists(path)) { found.push(Leftover("a slot of an earlier layout", path, -1)); }
+            }
+        }
+        if (FileSystem.isDir(snapshots)) {
+            for name in FileSystem.listDir(snapshots).sorted() {
+                if (name.startsWith("migrate-")) { found.push(Leftover("a folder a migration left", PathTools.join(snapshots, name), -1)); }
+            }
+        }
+        return found;
+    }
+
+    public void remove(Leftover leftover) {
+        if (self.fs.isSubvolume(leftover.path)) {
+            self.fs.deleteSubvolume(leftover.path);
+            return;
+        }
+        for child in self.fs.childSubvolumes(leftover.path) { self.fs.deleteSubvolume(child); }
+        self.run.removePath(leftover.path);
+    }
+
+    class string today() { return DateTime.now().format().substring(0, 10); }
+}

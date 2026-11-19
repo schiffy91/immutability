@@ -1,6 +1,7 @@
 import Library.Console;
 import Library.Timer;
 import Library.FileSystem;
+import Library.Map;
 import Library.Platform;
 import Library.Strings;
 import Library.Vector;
@@ -15,6 +16,8 @@ class ImmutabilityRun {
     public string top;
     public string logFile;
     public bool dryRun;
+    private bool holding;
+    private Map<string, string> held;  // a path and the owner it is still to get
 
     public ImmutabilityRun(bool dryRun) {
         self.shell = UnixShell();
@@ -23,6 +26,8 @@ class ImmutabilityRun {
         self.top = Environment.get("IMMUTABILITY_MOUNT_PATH", f"{ImmutabilityConstants.topBase()}.{Platform.pid()}");
         self.logFile = "";
         self.dryRun = dryRun;
+        self.holding = false;
+        self.held = {};
     }
 
     public string elapsed() {
@@ -127,10 +132,45 @@ class ImmutabilityRun {
         if (!self.dryRun && FileSystem.rename(source, destination) != 0) { self.fatal(f"Failed: rename {source} {destination}"); }
     }
 
-    // The owner and the mode of `reference` for `path`. The mode is set here; the owner still takes a child,
-    // for want of a call for it in the library.
+    // The owner and the mode of `reference` for `path`. The mode is set here. The owner takes a child, for
+    // want of a call for it in the library, and only where it is not the owner already: what root makes
+    // beside what root owns needs none.
     public void follow(string reference, string path) {
-        self.require(f"chown --reference={ShellWords.quote(reference)} {ShellWords.quote(path)}");
+        var wanted = self.owner(reference);
+        if (self.dryRun || wanted != self.owner(path)) {
+            if (self.holding && !self.dryRun) {
+                self.held.set(path, wanted);
+            } else {
+                self.require(f"chown {wanted} {ShellWords.quote(path)}");
+            }
+        }
         if (!self.dryRun && FileSystem.chmod(path, FileSystem.stat(reference).mode & 0o7777) != 0) { self.fatal(f"Failed: mode of {reference} for {path}"); }
+    }
+
+    // The owner `path` has, or is still to get, as `chown` takes it.
+    private string owner(string path) {
+        if (self.held.has(path)) { return self.held.get(path); }
+        var status = FileSystem.stat(path);
+        return f"{status.uid}:{status.gid}";
+    }
+
+    // From here to `settleOwners` the owners `follow` would set are kept, and then set by one child for each
+    // owner, not one for each path. Nothing that is held may be moved before it is settled.
+    public void holdOwners() { self.holding = true; }
+
+    public void settleOwners() {
+        self.holding = false;
+        Vector<string> owners = [];
+        for path in self.held.keys() {
+            if (!owners.contains(self.held.get(path))) { owners.push(self.held.get(path)); }
+        }
+        for owner in owners {
+            Vector<string> paths = [];
+            for path in self.held.keys() {
+                if (self.held.get(path) == owner) { paths.push(ShellWords.quote(path)); }
+            }
+            self.require(f"chown {owner} -- {paths.join(" ")}");
+        }
+        self.held = {};
     }
 }

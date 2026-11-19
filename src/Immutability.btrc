@@ -149,9 +149,14 @@ class Immutability {
     }
 
     public void restorePersistentDirs(Vector<ImmutabilityPlan> plans, string live, string clean) {
+        var stores = self.run.path(PathTools.join(self.persistRoot, ImmutabilityConstants.dirs()));
+        Vector<string> known = [];
+        if (!self.run.dryRun) { known = self.fs.childSubvolumes(stores); }  /* one listing, not a question for each store */
+        self.run.log(f"{known.len} stores listed");
         for plan in plans {
             if (!plan.kind.equals("dir")) { continue; }
             var store = self.run.path(plan.store);
+            if (known.contains(store)) { continue; }
             if (!self.fs.exists(store)) {
                 self.fs.seedSubvolume(store, self.fs.sourcePath(live, clean, plan.spec.relativePath));
             } else if (!self.fs.isSubvolume(store)) {
@@ -160,24 +165,41 @@ class Immutability {
         }
     }
 
+    // Each persisted file as the root has it now, in its store: copied beside the stores by one `cp` for all
+    // the files of a root, and moved to its store from there. A file the root no longer has leaves its store.
     public void restorePersistentFiles(Vector<ImmutabilityPlan> plans, string live, string clean) {
+        Vector<ImmutabilityPlan> kept = [];
+        Vector<string> fromLive = [];
+        Vector<string> fromClean = [];
         for plan in plans {
             if (!plan.kind.equals("file")) { continue; }
-            var destination = self.run.path(plan.store);
             var source = self.fs.sourcePath(live, clean, plan.spec.relativePath);
-            if (!source.isEmpty()) {
-                var temporary = f"{destination}.tmp.{Platform.pid()}";
-                self.run.removePath(temporary);
-                self.fs.copyPath(source, temporary);
-                self.run.removePath(destination);
-                self.run.renamePath(temporary, destination);
-            } else {
-                self.run.removePath(destination);
+            if (source.isEmpty()) {
+                self.run.removePath(self.run.path(plan.store));
+                continue;
             }
+            kept.push(plan);
+            if (source == PathTools.join(live, plan.spec.relativePath)) { fromLive.push(plan.spec.relativePath); } else { fromClean.push(plan.spec.relativePath); }
         }
+        if (kept.isEmpty()) { return; }
+        var files = PathTools.join(PathTools.join(self.persistRoot, ImmutabilityConstants.meta()), ImmutabilityConstants.files());
+        var staging = self.run.path(PathTools.join(files, "!staging"));  /* in the stores' own subvolume, so the move is a rename; no store has this name, a key never starts with "!" */
+        self.run.removePath(staging);  /* what a run that was cut off left */
+        self.fs.copyBelow(live, fromLive, staging);
+        self.fs.copyBelow(clean, fromClean, staging);
+        for plan in kept {
+            var destination = self.run.path(plan.store);
+            self.run.mkdirp(PathTools.dirname(destination));
+            self.run.removePath(destination);
+            self.run.renamePath(PathTools.join(staging, plan.spec.relativePath), destination);
+        }
+        self.run.removePath(staging);
     }
 
     public void populateNext(Vector<ImmutabilityPlan> plans, string live, string next) {
+        Vector<string> stores = [];
+        Vector<string> targets = [];
+        self.run.holdOwners();  /* the folders made here get their owners from one child for each owner */
         for plan in plans {
             var target = PathTools.join(next, plan.spec.relativePath);
             self.run.removePath(target);
@@ -191,10 +213,21 @@ class Immutability {
                 var source = self.run.path(plan.store);
                 if (self.fs.exists(source)) {
                     if (self.emptyBase()) { self.run.mkdirpFollowing(next, PathTools.dirname(plan.spec.relativePath), live); }
-                    self.fs.copyPath(source, target);
+                    stores.push(source);
+                    targets.push(target);
                 }
             }
         }
+        self.run.settleOwners();
+        if (stores.isEmpty()) { return; }
+        var staging = PathTools.join(next, ".immutability-staging");
+        self.run.removePath(staging);
+        self.fs.copyInto(stores, staging);  /* one copy for all the files, each then moved to its place */
+        for (int index = 0; index < stores.len; index++) {
+            self.run.mkdirp(PathTools.dirname(targets.get(index)));
+            self.run.renamePath(PathTools.join(staging, PathTools.basename(stores.get(index))), targets.get(index));
+        }
+        self.run.removePath(staging);
     }
 
     public void configure(string device, string snapshotsSubvolume, string cleanName, string mode, string persistRoot, string specFile, Vector<string> volumeArgs) {

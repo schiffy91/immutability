@@ -1,0 +1,125 @@
+import Library.CLI;
+import Library.FileSystem;
+import Library.JSON;
+import Library.Process;
+import testkit.Lab;
+
+// A machine with as many persisted paths as the real ones have: folders named by their slash, files, and
+// folders their user made. All of them outlive two resets, and what the reset and the mounts cost at a
+// boot with that many (seconds, and children run) is read from the tool's own lines, held against a
+// ceiling and kept with the run.
+class ScaleScenario {
+    private Guest machine;
+    private int folders;
+    private int files;
+    private int made;
+
+    public ScaleScenario(Guest machine, JSONValue settings) {
+        self.machine = machine;
+        self.folders = settings.get("folders").asInt();
+        self.files = settings.get("files").asInt();
+        self.made = settings.get("made").asInt();
+    }
+
+    private void again() {  // the machine goes down and comes up from the same disk
+        self.machine.reboot();
+        self.machine.waitForShutdown();
+        self.machine.start();
+        self.machine.waitForUnit("multi-user.target", 180);
+    }
+
+    private string each(int count, string body) { return f"for n in $(seq 1 {count}); do {body} || exit 1; done"; }
+
+    private void fill() {
+        print(f"The first boot: {self.folders} folders, {self.files} files and {self.made} folders their user makes get their contents");
+        self.machine.waitForUnit("multi-user.target", 180);
+        self.machine.succeed(self.each(self.folders, "echo folder-$n > /var/lib/scale/folder-$n/data"));
+        self.machine.succeed("mkdir -p /etc/scale && " + self.each(self.files, "echo file-$n > /etc/scale/file-$n"));
+        var making = self.each(self.made, "mkdir -m 750 ~/made-$n && echo made-$n > ~/made-$n/note");
+        self.machine.succeed(f"su alice -c {ShellWords.quote(making)}");
+        self.machine.succeed("echo ephemeral > /var/lib/scale/beside && sync");
+    }
+
+    private void kept(string after) {
+        print(f"After {after} every one of them is there, and what was beside them is gone");
+        self.machine.succeed(self.each(self.folders, "test \"$(cat /var/lib/scale/folder-$n/data)\" = folder-$n"));
+        self.machine.succeed(self.each(self.files, "test \"$(cat /etc/scale/file-$n)\" = file-$n"));
+        self.machine.succeed(self.each(self.made, "test \"$(cat /home/alice/made-$n/note)\" = made-$n && test \"$(stat -c %U:%a /home/alice/made-$n)\" = alice:750"));
+        self.machine.succeed("test ! -e /var/lib/scale/beside");
+        var mounts = self.machine.succeed("findmnt -rn -t btrfs -o SOURCE | grep -c -F '@persist/dirs/'").trim();
+        Check.equal(mounts, f"{self.folders + self.made}", "each persisted folder is mounted from its store");
+    }
+
+    // The seconds the tool had counted when it wrote `words` in this boot's journal of `unit`.
+    private string counted(string unit, string words) {
+        var line = self.machine.succeed(f"journalctl -b --no-pager -o cat -u {unit} | grep -F {ShellWords.quote(words)} | tail -n 1").trim();
+        Check.that(line.startsWith("[") && line.contains("s] "), f"{unit} wrote its time beside '{words}' ({line})");
+        return line.substring(1, line.find("s] ", 0) - 1);
+    }
+
+    // The seconds between the first and the last line of `unit` in this boot's journal: the unit as a whole.
+    private string lasted(string unit) {
+        return self.machine.succeed(f"journalctl -b --no-pager -o short-monotonic -u {unit} | awk -F'[][]' 'NR == 1 {{ first = $2 }} {{ last = $2 }} END {{ printf \"%.3f\", last - first }}'").trim();
+    }
+
+    // The children `unit` ran at this boot: the commands among the tool's lines. The count does not move with
+    // the load on the machine the test runs on, as the seconds do, so it is the tighter of the two ceilings.
+    private string children(string unit) {
+        return self.machine.succeed(f"journalctl -b --no-pager -o cat -u {unit} | grep -c -E '^\\[[0-9.]+s\\] (cd|cp|mv|chown|chmod|btrfs|mount|umount|findmnt) ' || true").trim();
+    }
+
+    private void within(string value, string ceiling, string what) {
+        Check.that(self.machine.execute(f"awk 'BEGIN {{ exit !({value} <= {ceiling}) }}'").code == 0, f"{what} is {value}, over its ceiling of {ceiling}");
+    }
+
+    private JSONValue measured(JSONValue ceilings) {
+        print("What a boot with this many paths costs, from the tool's own lines");
+        var result = JSONValue.makeObject();
+        result.set("resetTool", JSONValue.makeString(self.counted("immutability.service", "Immutability complete")));
+        result.set("resetUnit", JSONValue.makeString(self.lasted("immutability.service")));
+        result.set("mountsTool", JSONValue.makeString(self.counted("persistence-mounts.service", "Persistent mounts complete")));
+        result.set("mountsUnit", JSONValue.makeString(self.lasted("persistence-mounts.service")));
+        result.set("resetChildren", JSONValue.makeString(self.children("immutability.service")));
+        result.set("mountsChildren", JSONValue.makeString(self.children("persistence-mounts.service")));
+        for name in result.keys() { print(f"MEASURED {name} {result.get(name).asString()} (ceiling {ceilings.get(name).asString()})"); }
+        for name in result.keys() { self.within(result.get(name).asString(), ceilings.get(name).asString(), name); }
+        return result;
+    }
+
+    // This boot's lines of `unit`, each with the seconds the tool had counted: where the time went.
+    public string lines(string unit) { return self.machine.succeed(f"journalctl -b --no-pager -o cat -u {unit}"); }
+
+    public JSONValue check(JSONValue ceilings) {
+        self.fill();
+        self.again();
+        self.kept("the first reset, which makes the stores of what the user made");
+        self.again();
+        self.kept("a second reset, which finds every store in place");
+        return self.measured(ceilings);
+    }
+}
+
+int main(int argc, char** argv) {
+    try {
+        var lab = Lab(CLIArgs(argc, argv).require(0, "Supply VM descriptor"));
+        var settings = lab.settings();
+        lab.startAll();
+        var scenario = ScaleScenario(lab.guest("machine"), settings);
+        JSONValue measured = JSONValue.makeNull();
+        try {
+            measured = scenario.check(settings.get("ceilings"));
+        } catch (string error) {  // a reset that did not finish says why in its own lines
+            print(scenario.lines("immutability.service"));
+            throw error;
+        }
+        FileSystem.writeText(lab.artifact("scale.json"), measured.stringifyPretty() + "\n");
+        FileSystem.writeText(lab.artifact("reset.log"), scenario.lines("immutability.service"));
+        FileSystem.writeText(lab.artifact("mounts.log"), scenario.lines("persistence-mounts.service"));
+        lab.close();
+        print("PASS: a hundred persisted paths outlive two resets, and the boot's cost with them is under its ceilings");
+        return 0;
+    } catch (string error) {
+        print(f"FAIL: {error}");
+        return 1;
+    }
+}

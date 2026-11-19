@@ -51,11 +51,29 @@ class ImmutabilityMounts {
         return false;
     }
 
-    public void mountTarget(string device, string target, string subvol) {
-        self.run.mkdirp(target);
-        if (self.fs.mounted(target)) { return; }
-        var mountOptions = f"subvol={subvol},compress=zstd,noatime";
-        self.run.require(f"mount -t btrfs -o {ShellWords.quote(mountOptions)} {ShellWords.quote(device)} {ShellWords.quote(target)}");
+    // The line of a mount table that mounts the store `subvol` at `target`.
+    public string mountLine(string device, string target, string subvol) {
+        var options = f"subvol={subvol},compress=zstd,noatime";
+        return f"{ImmutabilityFs.mountWord(device)} {ImmutabilityFs.mountWord(target)} btrfs {ImmutabilityFs.mountWord(options)} 0 0";
+    }
+
+    // Every line of `table` mounted by one `mount`, not by a child for each, and each target looked at after.
+    public void mountAll(Vector<string> table, Vector<string> targets) {
+        if (table.isEmpty()) { return; }
+        if (self.run.dryRun) {
+            for line in table { self.run.log(f"DRY mount {line}"); }
+            return;
+        }
+        var file = f"{self.run.top}.mounts";
+        if (!FileSystem.writeAtomic(file, table.join("\n") + "\n", 0o600)) { self.run.fatal(f"cannot write the mount table: {file}"); }
+        try {
+            self.run.require(f"mount --all --fstab {ShellWords.quote(file)}");
+        } finally {
+            FileSystem.removeIfExists(file);
+        }
+        for target in targets {
+            if (!self.fs.mounted(target)) { self.run.fatal(f"not mounted after mount: {target}"); }
+        }
     }
 
     public bool persistAsDirectory(ImmutabilitySpec spec) {
@@ -93,13 +111,25 @@ class ImmutabilityMounts {
         }
         try {
             var selected = self.selectedSpecs(specs);
+            var stores = PathTools.join(persistRoot, ImmutabilityConstants.dirs());
+            Vector<string> known = [];
+            if (!self.run.dryRun) { known = self.fs.childSubvolumes(self.run.path(stores)); }  /* one listing, not a question for each store */
+            self.run.log(f"{known.len} stores listed");
+            Vector<string> table = [];
+            Vector<string> targets = [];
             for spec in selected {
                 var target = spec.absPath;
-                var subvol = PathTools.join(PathTools.join(persistRoot, ImmutabilityConstants.dirs()), ImmutabilityPaths.key(target));
-                self.ensurePersistentSubvolume(spec, self.run.path(subvol));
-                if (!self.fs.isSubvolume(self.run.path(subvol))) { continue; }
-                self.mountTarget(device, target, subvol);
+                var subvol = PathTools.join(stores, ImmutabilityPaths.key(target));
+                if (!known.contains(self.run.path(subvol))) {
+                    self.ensurePersistentSubvolume(spec, self.run.path(subvol));
+                    if (!self.fs.isSubvolume(self.run.path(subvol))) { continue; }
+                }
+                self.run.mkdirp(target);
+                if (self.fs.mounted(target)) { continue; }
+                table.push(self.mountLine(device, target, subvol));
+                targets.push(target);
             }
+            self.mountAll(table, targets);
         } finally {
             if (mountedTop) {
                 self.unmountTop(false);

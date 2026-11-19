@@ -26,6 +26,7 @@
         unit-tool = test system ./tests/unit;
         vm-reset-clean = import ./tests/reset { inherit inputs system; base = "clean"; };
         vm-reset-empty = import ./tests/reset { inherit inputs system; base = "empty"; };
+        vm-scale = import ./tests/scale { inherit inputs system; };
       });
 
       devShells = each (system: {

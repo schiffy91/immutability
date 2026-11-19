@@ -84,8 +84,11 @@ know for as long as the layout is one they can read.
 it for real: a layout newer than the generation, an unknown one and an unreadable one are each left alone by a boot that goes on and says so, an older one is brought up, the filesystem is mounted once per boot, persisted paths and their owners outlive a reset and the rest is gone, the root before it is a
 generation, a store nothing names is set aside, `gc` lists and then deletes an old one with an earlier layout's slot and a migration's folder while today's stays, a generation is put back, a folder holding a file that
 cannot be cloned (no-copy-on-write, as a database or a search index is) is persisted both at once and at
-the next boot, and `diff`, `plan`, `materialize` and `snapshots` work from the settings. The VM checks
-need KVM.
+the next boot, and `diff`, `plan`, `materialize` and `snapshots` work from the settings. `vm-scale` boots
+the same machine with a hundred persisted paths (folders, files, and folders their user made), resets it
+twice, and holds what a boot then costs against ceilings: the seconds the reset and the mounts take, and
+the children each runs, which must not grow with the number of paths. Its numbers and both units' lines are
+kept in the check's output. The VM checks need KVM.
 
 `ci/local.json` names what the owner's machine runs for a commit (`lint`, `unit`, `vm`), recorded with
 [`ci-local`](https://github.com/schiffy91/ci-local); hosted CI runs what has no local pass.
@@ -97,7 +100,7 @@ need KVM.
 | `src/Immutability.btrc`, `src/lib/` | The program, in [BTRC](https://github.com/schiffy91/btrc) |
 | `nix/module.nix`, `nix/package.nix`, `nix/lib.nix` | The module, the package, and `lib.persistKey` (a persisted path's subvolume name) |
 | `share/diffignore` | The default patterns for `diff` |
-| `tests/unit`, `tests/reset` | The suites above |
+| `tests/unit`, `tests/reset`, `tests/scale` | The suites above; `tests/lib/machine.nix` is the guest the two VM suites boot |
 
 Not proven here: an encrypted device, hibernation, and an installer's own layout. Those are tested where a
 configuration uses the module, in schiffy91/nixos (install, host boot, recovery and hibernate scenarios).

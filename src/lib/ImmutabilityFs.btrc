@@ -28,9 +28,21 @@ class ImmutabilityFs {
         return result.ok() && result.stdout().contains("ro=true");
     }
 
+    // Read from the kernel's own list, not asked of a child for each path. A mount point's spaces, tabs,
+    // newlines and backslashes are written there as \040, \011, \012 and \134.
     public bool mounted(string path) {
-        var result = self.run.shell.run(f"findmnt --mountpoint {ShellWords.quote(path)}", logFailure=false);
-        return result.ok();
+        var resolved = FileSystem.realPath(path);
+        var wanted = ImmutabilityFs.mountWord(resolved.isEmpty() ? ImmutabilityPaths.trimTrailingSlashes(path) : resolved);
+        for line in Strings.split(FileSystem.readText("/proc/self/mountinfo"), "\n") {
+            var fields = Strings.split(line, " ");
+            if (fields.len > 4 && fields.get(4) == wanted) { return true; }
+        }
+        return false;
+    }
+
+    // A word as the kernel's mount list and a mount table write it.
+    class string mountWord(string word) {
+        return word.replace("\\", "\\134").replace(" ", "\\040").replace("\t", "\\011").replace("\n", "\\012");
     }
 
     public int compareDeepestFirst(string left, string right) {
@@ -108,6 +120,24 @@ class ImmutabilityFs {
     public void copyPath(string source, string destination) {
         self.run.mkdirp(PathTools.dirname(destination));
         self.run.require(f"cp --reflink=auto -a {ShellWords.quote(source)} {ShellWords.quote(destination)}");
+    }
+
+    // The files `names` below `root`, copied to the same names below `into` by one `cp`, not a child for each.
+    public void copyBelow(string root, Vector<string> names, string into) {
+        if (names.isEmpty()) { return; }
+        self.run.mkdirp(into);
+        Vector<string> quoted = [];
+        for name in names { quoted.push(ShellWords.quote(name)); }
+        self.run.require(f"cd {ShellWords.quote(root)} && cp --reflink=auto -a --parents -t {ShellWords.quote(into)} -- {quoted.join(" ")}");
+    }
+
+    // Each of `sources` copied into `into` under its own name, by one `cp` for them all.
+    public void copyInto(Vector<string> sources, string into) {
+        if (sources.isEmpty()) { return; }
+        self.run.mkdirp(into);
+        Vector<string> quoted = [];
+        for source in sources { quoted.push(ShellWords.quote(source)); }
+        self.run.require(f"cp --reflink=auto -a -t {ShellWords.quote(into)} -- {quoted.join(" ")}");
     }
 
     public void copyDirectoryContents(string source, string destination) {

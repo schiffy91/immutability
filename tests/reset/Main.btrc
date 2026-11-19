@@ -144,6 +144,9 @@ class ResetScenario {
         self.again();
         self.machine.succeed("test ! -e /left-by-the-last-boot && test ! -e /run/immutability-refused");
         Check.equal(self.read("/.snapshots/.immutability/format") + " " + self.read("/.snapshots/.immutability/version"), "3 2026.11.17", "and both the number and the word are written");
+        print("Each reset moves the roots before it one place down, and the one past the last is gone");
+        Check.equal(self.read("/.snapshots/@root/generation-1/left-by-the-last-boot") + " " + self.read("/.snapshots/@root/generation-2/left-by-the-last-boot"), "again left", "the last root, and the one before it");
+        self.machine.succeed("test -d /.snapshots/@root/generation-3 && test ! -e /.snapshots/@root/generation-4 && btrfs property get /.snapshots/@root/generation-2 ro | grep -q ro=true");
     }
 
     public void check() {

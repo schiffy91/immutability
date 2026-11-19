@@ -47,9 +47,8 @@ class ImmutabilitySlots {
         var generation = generations - 1;
         while (generation >= 1) {
             var current = self.generationPath(root, generation);
-            if (self.fs.exists(current)) {
-                self.fs.snapshot(current, self.generationPath(root, generation + 1), true);
-                self.fs.deleteSubvolume(current);
+            if (self.fs.exists(current)) {  /* the same snapshot under its next name: nothing is copied, and nothing is left for the kernel to delete */
+                self.run.require(f"mv -T --no-copy {ShellWords.quote(current)} {ShellWords.quote(self.generationPath(root, generation + 1))}");
             }
             generation--;
         }

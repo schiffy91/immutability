@@ -67,11 +67,20 @@ The boot-time run is given everything as arguments by the module. The commands a
 | `immutability materialize [--dry-run] [--refresh-clean]` | Copy what is persisted back into the volumes; `--refresh-clean` then takes `CLEAN` anew, and is refused on an empty base |
 | `immutability snapshots create [--root <dir> --base B --snapshots-mount P --clean-name N name=mount ...]` | Take each reset volume's `CLEAN`. An installer names everything itself and gives the root it installed into |
 
+The layout on disk has a number, kept in `.immutability/format` under the snapshots subvolume (3 today).
+A generation reads its own number and every one below it, and brings an older layout up to its own. A
+higher number was written by a newer generation: this one then resets nothing, because it cannot know
+what it would be deleting, and the boot goes on, so that an earlier generation can always be booted
+again. Such a boot says so: `/run/immutability-refused` holds the reason and
+`immutability-refused.service` fails with it, as it does when the reset itself did not finish. The word
+in `.immutability/version` is what generations from before the number look for; it stays the one they
+know for as long as the layout is one they can read.
+
 ## Tests
 
 `nix flake check` builds them. `unit-tool` runs the path and ownership suites. `vm-reset-clean` and
 `vm-reset-empty` boot a machine whose root and home are btrfs subvolumes made on its first boot, and reset
-it for real: the filesystem is mounted once per boot, persisted paths and their owners outlive a reset and the rest is gone, the root before it is a
+it for real: a layout newer than the generation, an unknown one and an unreadable one are each left alone by a boot that goes on and says so, an older one is brought up, the filesystem is mounted once per boot, persisted paths and their owners outlive a reset and the rest is gone, the root before it is a
 generation, a store nothing names is set aside, a generation is put back, a folder holding a file that
 cannot be cloned (no-copy-on-write, as a database or a search index is) is persisted both at once and at
 the next boot, and `diff`, `plan`, `materialize` and `snapshots` work from the settings. The VM checks

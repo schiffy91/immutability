@@ -48,6 +48,11 @@ let
 		volumes = map (volume: "${volume.name}=${volume.mountPoint}") resetVolumes;
 		persistPaths = pathsToKeep;
 	};
+	# The layout on disk has a number. A tool reads its own number and every one below it, and brings an
+	# older layout up to its own; a higher number was written by a newer generation, and this one must not
+	# touch what it cannot read. The word is what generations from before the number look for, so one of
+	# them that is booted again still knows this layout; it changes when the number next does.
+	immutabilityFormat = 3;
 	immutabilityVersion = "2026.11.17";
 	immutabilityBase = cfg.base;
 	device = cfg.device;
@@ -126,6 +131,7 @@ let
 		immutability_version_top="/run/immutability-version-top"
 		immutability_version_dir="$immutability_version_top/${immutabilityVersionDir}"
 		immutability_version_file="$immutability_version_top/${immutabilityVersionFile}"
+		immutability_format_file="$immutability_version_top/${immutabilityVersionDir}/format"
 		immutability_version_cleanup() {
 			umount "$immutability_version_top" 2>/dev/null || true
 			rmdir "$immutability_version_top" 2>/dev/null || true
@@ -134,28 +140,43 @@ let
 		mkdir -p "$immutability_version_top"
 		mount -t btrfs -o subvolid=5 ${lib.escapeShellArg device} "$immutability_version_top"
 
-		immutability_previous_version=""
-		if [ -f "$immutability_version_file" ]; then
-			IFS= read -r immutability_previous_version < "$immutability_version_file" || true
+		# A boot that does not reset goes on, so that an earlier generation can still be booted, and says so
+		# where it is seen afterwards: immutability-refused.service fails with these words.
+		immutability_refuse() {
+			echo "immutability: NOT RESET: $1" >&2
+			printf '%s\n' "$1" > /run/immutability-refused
+			exit 1
+		}
+		immutability_found=0
+		if [ -f "$immutability_format_file" ]; then
+			IFS= read -r immutability_found < "$immutability_format_file" || true
+		elif [ -f "$immutability_version_file" ]; then
+			IFS= read -r immutability_word < "$immutability_version_file" || true
+			case "$immutability_word" in
+				"") immutability_found=0 ;;
+				"0.1") immutability_found=1 ;;
+				"2026.08.22") immutability_found=2 ;;
+				"2026.11.17") immutability_found=3 ;;
+				*) immutability_refuse "the volumes on this disk are in a layout this generation does not know ($immutability_word), so they were left as they are. Boot the generation that last ran, or a newer one." ;;
+			esac
 		fi
-		case "$immutability_previous_version" in
-			""|"0.1"|"2026.08.22"|${lib.escapeShellArg immutabilityVersion})
-				;;
-			*)
-				echo "Unsupported immutability version transition: $immutability_previous_version -> ${immutabilityVersion}" >&2
-				exit 1
-				;;
+		case "$immutability_found" in
+			""|*[!0-9]*) immutability_refuse "the layout number on this disk cannot be read ($immutability_found), so the volumes were left as they are." ;;
 		esac
+		if [ "$immutability_found" -gt ${toString immutabilityFormat} ]; then
+			immutability_refuse "the volumes on this disk are in layout $immutability_found, written by a newer generation; this one reads up to ${toString immutabilityFormat} and left them as they are. Boot that generation, or a newer one."
+		fi
 	'';
 	# The mount taken above is kept until the root is mounted (immutability-release lets it go). Unmounting
 	# here would be the filesystem's last mount going away: the kernel then finishes the subvolumes the
 	# reset just deleted, close to three seconds on a real root, and the root's own mount starts from
 	# nothing again. The version is written only when it changes, so an ordinary boot waits for no sync.
 	immutabilityVersionCommit = ''
-		if [ "$immutability_previous_version" != ${lib.escapeShellArg immutabilityVersion} ]; then
+		if [ "$immutability_found" != ${toString immutabilityFormat} ] || [ ! -f "$immutability_format_file" ]; then
 			mkdir -p "$immutability_version_dir"
 			printf '%s\n' ${lib.escapeShellArg immutabilityVersion} > "$immutability_version_file"
-			sync "$immutability_version_file" || sync
+			printf '%s\n' ${toString immutabilityFormat} > "$immutability_format_file"
+			sync "$immutability_format_file" || sync
 		fi
 		trap - EXIT
 	'';
@@ -217,6 +238,17 @@ in
 			systemd.tmpfiles.rules = homePersistRules;
 			boot.initrd.systemd.services.initrd-nixos-activation.after = bootPersistInitrdMountUnits;
 		})
+		(lib.mkIf (immutabilityEnabled && cfg.enforceOnReboot) {
+			systemd.services.immutability-refused = {  # a boot without its reset shows as a failed unit, with the reason
+				description = "The volumes were not reset at this boot";
+				wantedBy = [ "multi-user.target" ];
+				unitConfig.ConditionPathExists = "/run/immutability-refused";
+				serviceConfig = {
+					Type = "oneshot";
+					ExecStart = "${pkgs.bash}/bin/sh -c 'cat /run/immutability-refused >&2; exit 1'";
+				};
+			};
+		})
 		(lib.mkIf (immutabilityEnabled && immutabilityBase == "empty") {
 			systemd.services.immutability-marker = {  # `nixosctl diff` lists what changed after this
 				description = "Record where the reset volumes stood when boot finished";
@@ -269,7 +301,8 @@ in
 								serviceConfig.Type = "oneshot";
 								script = ''
 									${immutabilityVersionPreflight}
-									${immutabilityBin}/bin/immutability ${lib.optionalString immutabilityDryRun "--dry-run "}${immutabilityOptions} ${immutabilityCommandArgs} ${immutabilityPairArgs}
+									${immutabilityBin}/bin/immutability ${lib.optionalString immutabilityDryRun "--dry-run "}${immutabilityOptions} ${immutabilityCommandArgs} ${immutabilityPairArgs} \
+										|| immutability_refuse "the reset did not finish (see immutability.service in this boot's journal), so the volumes may hold what the last boot left."
 									${immutabilityVersionFinish}
 								'';
 							};

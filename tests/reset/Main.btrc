@@ -36,6 +36,7 @@ class ResetScenario {
         print("The first boot resets too: the root is the base, with the persisted paths in place");
         self.booted();
         Check.equal(self.read("/.snapshots/.immutability/version"), "2026.11.17", "the run recorded its version");
+        Check.equal(self.read("/.snapshots/.immutability/format"), "3", "and the number of the layout it left");
         self.machine.succeed("findmnt -rn -o SOURCE --target / | grep -F '[/@root]'");
         var parent = self.machine.succeed("btrfs subvolume show / | sed -n 's/^\\s*Parent UUID:\\s*//p'").trim();
         if (self.clean) {
@@ -117,11 +118,40 @@ class ResetScenario {
         }
     }
 
+    // What an earlier generation meets when it is booted again after a newer one changed the layout.
+    private void notReset(string layout, string words) {
+        self.machine.succeed(f"echo left > /left-by-the-last-boot && {layout} && sync");
+        self.again();
+        Check.equal(self.read("/left-by-the-last-boot"), "left", "the boot went on, and the root is as the last boot left it");
+        Check.that(self.read("/run/immutability-refused").contains(words), f"the reason is kept: {words}");
+        Check.equal(self.machine.succeed("systemctl is-failed immutability-refused.service || true").trim(), "failed", "and it shows as a failed unit");
+        Check.that(self.machine.succeed("journalctl -b --no-pager -u immutability-refused.service").contains(words), "whose journal has the reason");
+        Check.that(self.machine.succeed("journalctl -b --no-pager -u immutability.service").contains("NOT RESET"), "as has the reset's own");
+    }
+
+    private void newerLayout() {
+        print("A layout newer than this generation is left alone, the boot goes on, and it says that nothing was reset");
+        var directory = "/run/top/@snapshots/.immutability";
+        self.notReset(f"echo 99 > {directory}/format", "layout 99, written by a newer generation");
+        self.notReset(f"rm {directory}/format && echo 2031.01.01 > {directory}/version", "a layout this generation does not know (2031.01.01)");
+        self.notReset(f"echo newest > {directory}/format", "cannot be read (newest)");
+        print("With its own layout back, the next boot resets again and has nothing to say");
+        self.machine.succeed(f"echo 3 > {directory}/format && echo 2026.11.17 > {directory}/version && sync");
+        self.again();
+        self.machine.succeed("test ! -e /left-by-the-last-boot && test ! -e /run/immutability-refused && ! systemctl is-failed immutability-refused.service");
+        print("A layout from before the numbers is brought up to this one");
+        self.machine.succeed(f"rm {directory}/format && echo 2026.08.22 > {directory}/version && echo again > /left-by-the-last-boot && sync");
+        self.again();
+        self.machine.succeed("test ! -e /left-by-the-last-boot && test ! -e /run/immutability-refused");
+        Check.equal(self.read("/.snapshots/.immutability/format") + " " + self.read("/.snapshots/.immutability/version"), "3 2026.11.17", "and both the number and the word are written");
+    }
+
     public void check() {
         self.firstBoot();
         self.afterReset();
         self.restore();
         self.commands();
+        self.newerLayout();
     }
 }
 

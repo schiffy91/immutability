@@ -48,7 +48,8 @@ class ResetScenario {
         }
         self.machine.succeed("findmnt -rn -o SOURCE --target /var/keep | grep -F '@persist/dirs/var!keep'");
         Check.equal(self.machine.succeed("stat -c %U:%a /home/alice").trim(), "alice:700", "the home folder is its user's");
-        self.machine.succeed("echo ephemeral > /root-file && echo kept > /var/keep/data && echo kept-file > /etc/keep-file && echo ALPHA > /home/generation-marker");
+        self.machine.succeed("findmnt -rn -o SOURCE --target '/var/two words' | grep -F '@persist/dirs/var!two%20words'");  // a space in a name is written as the mount table wants it
+        self.machine.succeed("echo ephemeral > /root-file && echo kept > /var/keep/data && echo spaced > '/var/two words/data' && echo kept-file > /etc/keep-file && echo ALPHA > /home/generation-marker");
         self.machine.succeed("su alice -c 'echo ephemeral > ~/scratch && mkdir -m 750 ~/kept && echo mine > ~/kept/note'");
         print("A folder holding a file that cannot be cloned is persisted all the same, at once and at the next boot");
         // A database or a search index is marked no-copy-on-write, and btrfs refuses to clone such a file into a new subvolume.
@@ -72,6 +73,8 @@ class ResetScenario {
         Check.that(commands.contains("rename ") && !commands.contains("mv --no-copy") && !commands.contains("mv -T --no-copy") && !commands.contains("chmod --reference"), "renames and modes were done by the tool itself, not by a child for each");
         Check.that(commands.contains(" stores listed") && commands.contains("cp --reflink=auto -a -t "), "the stores were listed once, and the persisted files copied by one command, not one for each");
         Check.equal(self.read("/var/keep/data"), "kept", "a persisted directory");
+        Check.equal(self.read("/var/two words/data"), "spaced", "one with a space in its name");
+        self.machine.succeed("findmnt -rn -o SOURCE --target '/var/two words' | grep -F '@persist/dirs/var!two%20words'");
         Check.equal(self.read("/etc/keep-file"), "kept-file", "a persisted file");
         Check.equal(self.read("/home/alice/kept/note"), "mine", "a directory the user made, persisted from then on");
         self.machine.succeed("findmnt -rn -o SOURCE --target /home/alice/kept | grep -F '@persist/dirs/home!alice!kept'");

@@ -142,9 +142,6 @@ class ImmutabilityFs {
 
     public void matchOwnerAndMode(string source, string destination) {
         if (!FileSystem.exists(source) || !FileSystem.isDir(destination)) { return; }
-        var quotedSource = ShellWords.quote(source);
-        var quotedDestination = ShellWords.quote(destination);
-        self.run.require(f"chown --reference={quotedSource} {quotedDestination}");
-        self.run.require(f"chmod --reference={quotedSource} {quotedDestination}");
+        self.run.follow(source, destination);
     }
 }

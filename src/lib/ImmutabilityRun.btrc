@@ -84,12 +84,7 @@ class ImmutabilityRun {
         if (missing.isEmpty()) { return; }
         self.mkdirp(path);
         if (self.dryRun || !FileSystem.exists(ancestor)) { return; }
-        var reference = ShellWords.quote(ancestor);
-        for (int i = missing.len - 1; i >= 0; i--) {
-            var created = ShellWords.quote(missing.get(i));
-            self.require(f"chown --reference={reference} {created}");
-            self.require(f"chmod --reference={reference} {created}");
-        }
+        for (int i = missing.len - 1; i >= 0; i--) { self.follow(ancestor, missing.get(i)); }
     }
 
     public void mkdirpFollowing(string base, string relativePath, string model) {  /* owners and modes as under model */
@@ -103,9 +98,7 @@ class ImmutabilityRun {
             if (FileSystem.exists(created)) { continue; }
             self.mkdirp(created);
             if (self.dryRun) { continue; }
-            var reference = ShellWords.quote(FileSystem.isDir(like) && !FileSystem.isSymlink(like) ? like : parent);
-            self.require(f"chown --reference={reference} {ShellWords.quote(created)}");
-            self.require(f"chmod --reference={reference} {ShellWords.quote(created)}");
+            self.follow(FileSystem.isDir(like) && !FileSystem.isSymlink(like) ? like : parent, created);
         }
     }
 
@@ -127,9 +120,17 @@ class ImmutabilityRun {
         }
     }
 
+    // A rename and nothing else: it never copies, and it is done here, not by a child. The place it goes to
+    // is not there yet, or is a file it replaces.
     public void renamePath(string source, string destination) {
-        var quotedSource = ShellWords.quote(source);
-        var quotedDestination = ShellWords.quote(destination);
-        self.require(f"mv --no-copy {quotedSource} {quotedDestination}");
+        self.log(f"{self.dryRun ? "DRY " : ""}rename {ShellWords.quote(source)} {ShellWords.quote(destination)}");
+        if (!self.dryRun && FileSystem.rename(source, destination) != 0) { self.fatal(f"Failed: rename {source} {destination}"); }
+    }
+
+    // The owner and the mode of `reference` for `path`. The mode is set here; the owner still takes a child,
+    // for want of a call for it in the library.
+    public void follow(string reference, string path) {
+        self.require(f"chown --reference={ShellWords.quote(reference)} {ShellWords.quote(path)}");
+        if (!self.dryRun && FileSystem.chmod(path, FileSystem.stat(reference).mode & 0o7777) != 0) { self.fatal(f"Failed: mode of {reference} for {path}"); }
     }
 }

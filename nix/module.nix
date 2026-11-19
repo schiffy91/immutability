@@ -147,11 +147,16 @@ let
 				;;
 		esac
 	'';
+	# The mount taken above is kept until the root is mounted (immutability-release lets it go). Unmounting
+	# here would be the filesystem's last mount going away: the kernel then finishes the subvolumes the
+	# reset just deleted, close to three seconds on a real root, and the root's own mount starts from
+	# nothing again. The version is written only when it changes, so an ordinary boot waits for no sync.
 	immutabilityVersionCommit = ''
-		mkdir -p "$immutability_version_dir"
-		printf '%s\n' ${lib.escapeShellArg immutabilityVersion} > "$immutability_version_file"
-		sync "$immutability_version_file" || sync
-		immutability_version_cleanup
+		if [ "$immutability_previous_version" != ${lib.escapeShellArg immutabilityVersion} ]; then
+			mkdir -p "$immutability_version_dir"
+			printf '%s\n' ${lib.escapeShellArg immutabilityVersion} > "$immutability_version_file"
+			sync "$immutability_version_file" || sync
+		fi
 		trap - EXIT
 	'';
 	immutabilityVersionFinish = if immutabilityDryRun then ''
@@ -196,6 +201,7 @@ in
 				};
 				path = with pkgs; [ btrfs-progs coreutils util-linux ];
 				script = ''
+					umount /run/immutability-version-top 2>/dev/null && rmdir /run/immutability-version-top 2>/dev/null || true  # should the initrd have left the reset's mount
 					${immutabilityBin}/bin/immutability ${lib.optionalString immutabilityDryRun "--dry-run "}mount ${lib.escapeShellArg device} ${lib.escapeShellArg immutabilityPersistRoot} ${immutabilitySpecFile}
 				'';
 			};
@@ -267,6 +273,18 @@ in
 									${immutabilityVersionFinish}
 								'';
 							};
+						services."immutability-release" = {
+							description = "Let go of the mount the reset held until the root was mounted";
+							wantedBy = [ "initrd.target" ];
+							after = [ "sysroot.mount" "immutability.service" ];
+							before = [ "initrd-switch-root.target" ];
+							unitConfig.DefaultDependencies = "no";
+							serviceConfig.Type = "oneshot";
+							script = ''
+								umount /run/immutability-version-top 2>/dev/null || true
+								rmdir /run/immutability-version-top 2>/dev/null || true
+							'';
+						};
 					};
 				};
 			};

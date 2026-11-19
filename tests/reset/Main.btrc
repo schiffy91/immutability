@@ -64,6 +64,9 @@ class ResetScenario {
         print("After a reset what was persisted is there with its owners, and the rest is gone");
         self.again();
         self.machine.succeed("test ! -e /root-file && test ! -e /home/alice/scratch && test ! -e /home/generation-marker");
+        Check.equal(self.machine.succeed("journalctl -k -b --no-pager | grep -c 'first mount of filesystem'").trim(), "1", "the filesystem was mounted once: the reset held it until the root was mounted, and did not unmount it in between");
+        self.machine.succeed("! findmnt /run/immutability-version-top && test ! -e /run/immutability-version-top");  // and the reset's own mount was let go
+        Check.equal(self.read("/.snapshots/.immutability/version"), "2026.11.17", "the version is still recorded");
         Check.equal(self.read("/var/keep/data"), "kept", "a persisted directory");
         Check.equal(self.read("/etc/keep-file"), "kept-file", "a persisted file");
         Check.equal(self.read("/home/alice/kept/note"), "mine", "a directory the user made, persisted from then on");

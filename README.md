@@ -49,6 +49,11 @@ With `base = "empty"` there is no `CLEAN`: an installer takes none, and a direct
 persisted path takes its owner and mode from the same directory in the root before it, so a home folder
 stays its user's. A path that should outlive a reboot is persisted on either base.
 
+The reset holds the filesystem mounted from its own start until the root is mounted, and a small unit
+after that lets its mount go. Unmounting between the two would be the filesystem's last mount going
+away: the kernel then finishes the subvolumes the reset has just deleted, which took close to three
+seconds on a real root, and the root's own mount starts from nothing again.
+
 ## Commands
 
 The boot-time run is given everything as arguments by the module. The commands a person runs read
@@ -66,7 +71,7 @@ The boot-time run is given everything as arguments by the module. The commands a
 
 `nix flake check` builds them. `unit-tool` runs the path and ownership suites. `vm-reset-clean` and
 `vm-reset-empty` boot a machine whose root and home are btrfs subvolumes made on its first boot, and reset
-it for real: persisted paths and their owners outlive a reset and the rest is gone, the root before it is a
+it for real: the filesystem is mounted once per boot, persisted paths and their owners outlive a reset and the rest is gone, the root before it is a
 generation, a store nothing names is set aside, a generation is put back, a folder holding a file that
 cannot be cloned (no-copy-on-write, as a database or a search index is) is persisted both at once and at
 the next boot, and `diff`, `plan`, `materialize` and `snapshots` work from the settings. The VM checks

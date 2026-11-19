@@ -71,6 +71,7 @@ class ResetScenario {
         Check.equal(self.read("/.snapshots/.immutability/version"), "2026.11.17", "the version is still recorded");
         var commands = self.machine.succeed("journalctl -b --no-pager -u immutability.service");
         Check.that(commands.contains("rename ") && !commands.contains("mv --no-copy") && !commands.contains("mv -T --no-copy") && !commands.contains("chmod --reference"), "renames and modes were done by the tool itself, not by a child for each");
+        Check.that(commands.contains(" deleted roots wait for the kernel") && !commands.contains("-1 deleted roots"), "the reset says how many deleted roots the kernel still has to clean up");
         Check.that(commands.contains(" stores listed") && commands.contains("cp --reflink=auto -a -t "), "the stores were listed once, and the persisted files copied by one command, not one for each");
         Check.equal(self.read("/var/keep/data"), "kept", "a persisted directory");
         Check.equal(self.read("/var/two words/data"), "spaced", "one with a space in its name");

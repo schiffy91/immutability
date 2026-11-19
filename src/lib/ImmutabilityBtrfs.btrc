@@ -30,6 +30,10 @@ class ImmutabilityBtrfs {
         return f"btrfs property set -ts {ShellWords.quote(path)} ro false";
     }
 
+    class string listDeleted(string top) {
+        return f"btrfs subvolume list -d {ShellWords.quote(top)}";
+    }
+
     class string sync(string top) {
         return f"btrfs filesystem sync {ShellWords.quote(top)}";
     }

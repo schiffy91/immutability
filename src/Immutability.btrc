@@ -331,6 +331,7 @@ class Immutability {
         self.mounts.mountTop(self.device, self.assumeMounted);
         try {
             self.run.enableFileLog(self.logPath());
+            self.run.log(f"{self.fs.deletedRoots()} deleted roots wait for the kernel");  /* what the last boots left it to clean up */
             if (!self.mode.equals(ImmutabilityConstants.publishPrepared())) {
                 self.orphans.ensureNamespaces(self.persistRoot);
             }

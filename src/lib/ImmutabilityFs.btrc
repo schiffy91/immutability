@@ -61,6 +61,18 @@ class ImmutabilityFs {
         paths.insert(index, path);
     }
 
+    // The roots that were deleted and that the kernel has not cleaned up yet: its work for after the boot,
+    // which a remount of the root can end up waiting for. -1 where they cannot be listed.
+    public int deletedRoots() {
+        var listed = self.run.run(ImmutabilityBtrfs.listDeleted(self.run.top), logFailure=false);
+        if (!listed.ok()) { return -1; }
+        var count = 0;
+        for line in Strings.split(listed.stdout(), "\n") {
+            if (!line.trim().isEmpty()) { count++; }
+        }
+        return count;
+    }
+
     public Vector<string> childSubvolumes(string path) {
         Vector<string> result = [];
         if (!FileSystem.isDir(path)) { return result; }

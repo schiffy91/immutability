@@ -28,16 +28,24 @@ class ImmutabilityFs {
         return result.ok() && result.stdout().contains("ro=true");
     }
 
-    // Read from the kernel's own list, not asked of a child for each path. A mount point's spaces, tabs,
-    // newlines and backslashes are written there as \040, \011, \012 and \134.
-    public bool mounted(string path) {
-        var resolved = FileSystem.realPath(path);
-        var wanted = ImmutabilityFs.mountWord(resolved.isEmpty() ? ImmutabilityPaths.trimTrailingSlashes(path) : resolved);
+    // Read from the kernel's own list, not asked of a child for each path.
+    public bool mounted(string path) { return self.mountedAmong(self.mountPoints(), path); }
+
+    // Every mount point in the kernel's list, as it writes them there: a mount point's spaces, tabs, newlines
+    // and backslashes are \040, \011, \012 and \134. One reading answers for many paths; with a hundred
+    // mounts a reading for each path cost more than making the mounts.
+    public Vector<string> mountPoints() {
+        Vector<string> points = [];
         for line in Strings.split(FileSystem.readText("/proc/self/mountinfo"), "\n") {
             var fields = Strings.split(line, " ");
-            if (fields.len > 4 && fields.get(4) == wanted) { return true; }
+            if (fields.len > 4) { points.push(fields.get(4)); }
         }
-        return false;
+        return points;
+    }
+
+    public bool mountedAmong(Vector<string> points, string path) {
+        var resolved = FileSystem.realPath(path);
+        return points.contains(ImmutabilityFs.mountWord(resolved.isEmpty() ? ImmutabilityPaths.trimTrailingSlashes(path) : resolved));
     }
 
     // A word as the kernel's mount list and a mount table write it.

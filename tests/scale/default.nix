@@ -20,7 +20,7 @@ in (import ../lib/vm-test.nix { inherit pkgs inputs; }) {
   settings = count // {
     inherit base;
     # Seconds and counts, as words. Measured on 19 Nov 2026 with a child for each path: reset 1.36 s, mounts
-    # 2.80 s. Now: 0.59 s and 0.24 s, with 25 and 4 children. The seconds leave room for a loaded machine.
+    # 2.80 s. Now: 0.59 s and 0.16 s, with 26 and 4 children. The seconds leave room for a loaded machine.
     ceilings = { resetTool = "1.2"; resetUnit = "1.3"; mountsTool = "0.8"; mountsUnit = "0.9"; resetChildren = "40"; mountsChildren = "6"; };
   };
 }

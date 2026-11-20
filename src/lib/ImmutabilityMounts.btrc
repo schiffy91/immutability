@@ -71,8 +71,9 @@ class ImmutabilityMounts {
         } finally {
             FileSystem.removeIfExists(file);
         }
+        var points = self.fs.mountPoints();
         for target in targets {
-            if (!self.fs.mounted(target)) { self.run.fatal(f"not mounted after mount: {target}"); }
+            if (!self.fs.mountedAmong(points, target)) { self.run.fatal(f"not mounted after mount: {target}"); }
         }
     }
 
@@ -117,6 +118,7 @@ class ImmutabilityMounts {
             self.run.log(f"{known.len} stores listed");
             Vector<string> table = [];
             Vector<string> targets = [];
+            var points = self.fs.mountPoints();  /* nothing in this loop mounts at a target */
             for spec in selected {
                 var target = spec.absPath;
                 var subvol = PathTools.join(stores, ImmutabilityPaths.key(target));
@@ -125,7 +127,7 @@ class ImmutabilityMounts {
                     if (!self.fs.isSubvolume(self.run.path(subvol))) { continue; }
                 }
                 self.run.mkdirp(target);
-                if (self.fs.mounted(target)) { continue; }
+                if (self.fs.mountedAmong(points, target)) { continue; }
                 table.push(self.mountLine(device, target, subvol));
                 targets.push(target);
             }
